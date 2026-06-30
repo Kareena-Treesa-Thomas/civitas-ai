@@ -1,0 +1,4 @@
+project_id = "tbhkasvwjhidivfhdsmd"
+
+[functions.analyze-groceries]
+verify_jwt = false
