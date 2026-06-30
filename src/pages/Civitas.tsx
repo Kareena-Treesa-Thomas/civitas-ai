@@ -18,6 +18,8 @@ type Report = {
   id: string;
   vendor: string;
   note: string;
+  reporter?: string;
+  storeLink?: string;
   result: AIResult;
   createdAt: string;
 };
@@ -28,6 +30,8 @@ const HERO_KEY = "civitas_hero_score";
 export default function Civitas() {
   const [vendor, setVendor] = useState("");
   const [note, setNote] = useState("");
+  const [reporter, setReporter] = useState("");
+  const [storeLink, setStoreLink] = useState("");
   const [reports, setReports] = useState<Report[]>([]);
   const [query, setQuery] = useState("");
   const [heroScore, setHeroScore] = useState<number>(0);
@@ -55,8 +59,14 @@ export default function Civitas() {
         body: { vendor: vendorName, note: noteText },
       });
 
-      if (error) throw error;
-      if (!data) throw new Error("No response from AI");
+      if (error) {
+        console.error("Supabase function error", error);
+        throw error;
+      }
+      if (!data) {
+        console.error("Supabase function returned no data", { vendorName, noteText });
+        throw new Error("No response from AI");
+      }
 
       // Expected shape: { entity, sentiment, category, confidence }
       return {
@@ -66,6 +76,7 @@ export default function Civitas() {
         confidence: Number(data.confidence ?? 0.5),
       } as AIResult;
     } catch (e) {
+      console.error("analyzeNote fallback — error calling analyze-civitas", e);
       // Fallback simple parser if the function is unavailable
       const lowered = noteText.toLowerCase();
       const sentiment: Sentiment = /good|fair|reliable|trust|honest/.test(lowered) ? "positive" : "negative";
@@ -85,6 +96,8 @@ export default function Civitas() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         vendor: vendor.trim(),
         note: note.trim(),
+        reporter: reporter.trim() || undefined,
+        storeLink: storeLink.trim() || undefined,
         result: ai,
         createdAt: new Date().toISOString(),
       };
@@ -93,6 +106,8 @@ export default function Civitas() {
       setHeroScore((s) => s + 1);
       setVendor("");
       setNote("");
+      setReporter("");
+      setStoreLink("");
     } catch (err) {
       console.error(err);
       alert("Failed to analyze note");
@@ -138,6 +153,14 @@ export default function Civitas() {
               <input value={vendor} onChange={(e) => setVendor(e.target.value)} className="w-full mt-1 input" placeholder="e.g. Krishna Grocers" />
             </div>
             <div>
+              <label className="text-sm text-muted-foreground">Your name</label>
+              <input value={reporter} onChange={(e) => setReporter(e.target.value)} className="w-full mt-1 input" placeholder="Optional: your name" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Store link (optional)</label>
+              <input value={storeLink} onChange={(e) => setStoreLink(e.target.value)} className="w-full mt-1 input" placeholder="https://maps.google.com/?q=... or store website" />
+            </div>
+            <div>
               <label className="text-sm text-muted-foreground">Trust note</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} className="w-full mt-1 textarea" rows={3} placeholder="e.g. This shop overcharges on packaged goods" />
             </div>
@@ -171,7 +194,10 @@ export default function Civitas() {
                   {shownReports.length === 0 && <div className="text-sm text-muted-foreground">No reports yet for this vendor.</div>}
                   {shownReports.map((r) => (
                     <div key={r.id} className="p-3 bg-secondary/6 rounded-md border border-border/30">
-                      <div className="text-sm text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
+                        <div className="text-sm text-muted-foreground">{r.reporter ? `Reported by ${r.reporter}` : "Anonymous"}</div>
+                      </div>
                       <div className="mt-1 font-medium">{r.note}</div>
                       <div className="mt-2 text-sm flex items-center gap-2">
                         <span className="text-muted-foreground">Sentiment:</span>
@@ -181,6 +207,11 @@ export default function Civitas() {
                         <span className="text-muted-foreground">Confidence:</span>
                         <span className="font-medium">{Math.round(r.result.confidence * 100)}%</span>
                       </div>
+                      {r.storeLink && (
+                        <div className="mt-2">
+                          <a href={r.storeLink} target="_blank" rel="noreferrer" className="text-sm text-primary underline">View Store</a>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
