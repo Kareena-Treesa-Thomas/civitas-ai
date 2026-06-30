@@ -3,15 +3,116 @@ import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
 import StoreCard, { type StoreData } from "@/components/StoreCard";
 import PriceTrendChart from "@/components/PriceTrendChart";
-import LoginModal from "@/components/LoginModal";
+// Login removed; reporter name input is in Header
 import FeaturesModal from "@/components/FeaturesModal";
 import AboutModal from "@/components/AboutModal";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Trophy, AlertCircle, LogOut, User } from "lucide-react";
 
+const OFFLINE_FALLBACK_RESULTS = {
+  stores: [
+    {
+      name: "Blinkit",
+      items: { Milk: 62, Eggs: 72, Bread: 42, Rice: 85 },
+      subtotal: 261,
+      discount: 18,
+      final_price: 214,
+      delivery_time: "10 mins",
+      delivery_cost: 25,
+      free_delivery_above: 299,
+      rating: 4.3,
+      best: false,
+    },
+    {
+      name: "Zepto",
+      items: { Milk: 59, Eggs: 68, Bread: 38, Rice: 80 },
+      subtotal: 245,
+      discount: 15,
+      final_price: 208,
+      delivery_time: "10 mins",
+      delivery_cost: 20,
+      free_delivery_above: 199,
+      rating: 4.2,
+      best: false,
+    },
+    {
+      name: "BigBasket",
+      items: { Milk: 58, Eggs: 65, Bread: 36, Rice: 78 },
+      subtotal: 237,
+      discount: 20,
+      final_price: 190,
+      delivery_time: "2-4 hrs",
+      delivery_cost: 0,
+      free_delivery_above: 500,
+      rating: 4.5,
+      best: true,
+    },
+    {
+      name: "Amazon Fresh",
+      items: { Milk: 60, Eggs: 70, Bread: 40, Rice: 82 },
+      subtotal: 252,
+      discount: 12,
+      final_price: 222,
+      delivery_time: "2 hrs",
+      delivery_cost: 0,
+      free_delivery_above: 300,
+      rating: 4.1,
+      best: false,
+    },
+    {
+      name: "Swiggy Instamart",
+      items: { Milk: 63, Eggs: 73, Bread: 45, Rice: 88 },
+      subtotal: 269,
+      discount: 10,
+      final_price: 242,
+      delivery_time: "15 mins",
+      delivery_cost: 30,
+      free_delivery_above: 399,
+      rating: 4.0,
+      best: false,
+    },
+    {
+      name: "Flipkart Supermart",
+      items: { Milk: 57, Eggs: 67, Bread: 37, Rice: 79 },
+      subtotal: 240,
+      discount: 16,
+      final_price: 202,
+      delivery_time: "Next day",
+      delivery_cost: 0,
+      free_delivery_above: 500,
+      rating: 4.2,
+      best: false,
+    },
+    {
+      name: "Nature's Basket",
+      items: { Milk: 70, Eggs: 85, Bread: 55, Rice: 105 },
+      subtotal: 315,
+      discount: 8,
+      final_price: 290,
+      delivery_time: "3-5 hrs",
+      delivery_cost: 50,
+      free_delivery_above: 700,
+      rating: 4.4,
+      best: false,
+    },
+    {
+      name: "JioMart",
+      items: { Milk: 55, Eggs: 63, Bread: 35, Rice: 75 },
+      subtotal: 228,
+      discount: 22,
+      final_price: 178,
+      delivery_time: "Next day",
+      delivery_cost: 0,
+      free_delivery_above: 400,
+      rating: 4.0,
+      best: false,
+    },
+  ],
+};
+
 export default function Index() {
-  const [loginOpen, setLoginOpen] = useState(false);
+  // login removed; no auth required
   const [featuresOpen, setFeaturesOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,14 +132,41 @@ export default function Index() {
     setIsLoading(true);
     setResults(null);
     try {
-      const { data, error } = await supabase.functions.invoke("analyze-groceries", {
-        body: { items },
-      });
+      // Try normal Supabase Edge Function first
+      let data: any = null;
+      try {
+        const invokeRes = await supabase.functions.invoke("analyze-groceries", { body: { items } });
+        if (invokeRes.error) {
+          console.error("analyze-groceries invoke error", invokeRes.error);
+          throw invokeRes.error;
+        }
+        data = invokeRes.data;
+        console.log("analyze-groceries raw response:", data);
+      } catch (invokeErr: any) {
+        console.warn("Supabase invoke failed, attempting local fallback", invokeErr);
+        const msg = (invokeErr && (invokeErr.message || invokeErr.name)) || String(invokeErr);
+        // If it's a network / FunctionsFetchError, try local Deno function
+        if (msg.includes("Failed to send a request") || msg.includes("Failed to fetch") || msg.includes("FunctionsFetchError") || msg.includes("TypeError")) {
+          try {
+            const r = await fetch("http://localhost:8000/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+            data = await r.json();
+            console.log("local analyze-groceries response:", data);
+            // If the local server is the Civitas function it will return a vendor/note error
+            if (data && data.error && typeof data.error === "string" && data.error.includes("vendor and note are required")) {
+              throw new Error("Local server at http://localhost:8000 appears to be the Civitas function. Start the groceries function locally (supabase/functions/analyze-groceries) or deploy the groceries function.");
+            }
+          } catch (localErr) {
+            console.warn("Local fallback failed, using offline sample data", localErr);
+            data = { ...OFFLINE_FALLBACK_RESULTS, fallback: true };
+          }
+        } else {
+          throw invokeErr;
+        }
+      }
 
-      if (error) throw error;
-
-      if (!data?.stores || data.stores.length === 0) {
-        throw new Error("No results returned");
+      if (!data || !data.stores || data.stores.length === 0) {
+        console.warn("analyze-groceries returned no stores, using offline sample data", data);
+        data = { ...OFFLINE_FALLBACK_RESULTS, fallback: true };
       }
 
       setResults(data);
@@ -54,8 +182,10 @@ export default function Index() {
         toast.success("Price analysis complete!");
       }
     } catch (err: any) {
-      console.error(err);
-      toast.error("Analysis failed. Please try again.");
+      console.error("handleAnalyze error:", err);
+      // Show detailed error to help debugging (status, message, body)
+      const details = err && (err.message || JSON.stringify(err));
+      toast.error(`Analysis failed: ${details}`);
     } finally {
       setIsLoading(false);
     }
@@ -72,7 +202,7 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       <Header
-        onLoginClick={() => setLoginOpen(true)}
+        onLoginClick={() => {}}
         onFeaturesClick={() => setFeaturesOpen(true)}
         onAboutClick={() => setAboutOpen(true)}
       />
@@ -163,7 +293,7 @@ export default function Index() {
         </div>
       </footer>
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      {/* Login removed; reporter name is collected in Header */}
       <FeaturesModal open={featuresOpen} onClose={() => setFeaturesOpen(false)} />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>

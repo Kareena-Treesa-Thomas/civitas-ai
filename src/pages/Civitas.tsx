@@ -30,7 +30,7 @@ const HERO_KEY = "civitas_hero_score";
 export default function Civitas() {
   const [vendor, setVendor] = useState("");
   const [note, setNote] = useState("");
-  const [reporter, setReporter] = useState("");
+  // reporter input removed
   const [storeLink, setStoreLink] = useState("");
   const [reports, setReports] = useState<Report[]>([]);
   const [query, setQuery] = useState("");
@@ -55,6 +55,7 @@ export default function Civitas() {
   const analyzeNote = async (vendorName: string, noteText: string): Promise<AIResult> => {
     // Call the Supabase function pattern used elsewhere in the project
     try {
+      console.log("analyze-civitas invoke", { vendor: vendorName, notePreview: noteText.slice(0, 200) });
       const { data, error } = await supabase.functions.invoke("analyze-civitas", {
         body: { vendor: vendorName, note: noteText },
       });
@@ -64,10 +65,12 @@ export default function Civitas() {
         throw error;
       }
       if (!data) {
+        console.warn("Supabase function returned no data", { vendorName, noteText });
         console.error("Supabase function returned no data", { vendorName, noteText });
         throw new Error("No response from AI");
       }
 
+      console.log("analyze-civitas response", data);
       // Expected shape: { entity, sentiment, category, confidence }
       return {
         entity: data.entity ?? vendorName,
@@ -96,7 +99,7 @@ export default function Civitas() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         vendor: vendor.trim(),
         note: note.trim(),
-        reporter: reporter.trim() || undefined,
+        // reporter removed
         storeLink: storeLink.trim() || undefined,
         result: ai,
         createdAt: new Date().toISOString(),
@@ -106,7 +109,7 @@ export default function Civitas() {
       setHeroScore((s) => s + 1);
       setVendor("");
       setNote("");
-      setReporter("");
+      
       setStoreLink("");
     } catch (err) {
       console.error(err);
@@ -134,6 +137,13 @@ export default function Civitas() {
 
   const shownName = query.trim();
   const shownReports = shownName ? reportsFor(shownName) : [];
+  if (shownName) {
+    console.log("Civitas search debug", {
+      query: shownName,
+      matchingCount: shownReports.length,
+      sentiments: shownReports.map((r) => ({ id: r.id, sentiment: r.result.sentiment, category: r.result.category, confidence: r.result.confidence })),
+    });
+  }
   const shownStatus = shownName ? getStatus(shownName) : null;
 
   return (
@@ -152,10 +162,7 @@ export default function Civitas() {
               <label className="text-sm text-muted-foreground">Vendor / Shop name</label>
               <input value={vendor} onChange={(e) => setVendor(e.target.value)} className="w-full mt-1 input" placeholder="e.g. Krishna Grocers" />
             </div>
-            <div>
-              <label className="text-sm text-muted-foreground">Your name</label>
-              <input value={reporter} onChange={(e) => setReporter(e.target.value)} className="w-full mt-1 input" placeholder="Optional: your name" />
-            </div>
+            {/* reporter removed */}
             <div>
               <label className="text-sm text-muted-foreground">Store link (optional)</label>
               <input value={storeLink} onChange={(e) => setStoreLink(e.target.value)} className="w-full mt-1 input" placeholder="https://maps.google.com/?q=... or store website" />
@@ -165,8 +172,8 @@ export default function Civitas() {
               <textarea value={note} onChange={(e) => setNote(e.target.value)} className="w-full mt-1 textarea" rows={3} placeholder="e.g. This shop overcharges on packaged goods" />
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={handleSubmit} disabled={isLoading} className="h-9">Submit Report</Button>
-              <Button onClick={() => { setVendor(""); setNote(""); }} variant="ghost" className="h-9">Clear</Button>
+              <Button type="submit" disabled={isLoading} className="h-9">Submit Report</Button>
+              <Button type="button" onClick={() => { setVendor(""); setNote(""); }} variant="ghost" className="h-9">Clear</Button>
             </div>
           </form>
 
@@ -174,7 +181,7 @@ export default function Civitas() {
             <h2 className="font-medium">Search vendor</h2>
             <div className="flex gap-2 mt-2">
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type vendor name to look up" className="input flex-1" />
-              <Button onClick={() => setQuery("")}>Clear</Button>
+              <Button type="button" onClick={() => setQuery("")}>Clear</Button>
             </div>
 
             {shownName && (

@@ -30,6 +30,47 @@ const STORE_LOGOS: Record<string, string> = {
   "JioMart": "🔴",
 };
 
+const STORE_URLS: Record<string, string> = {
+  "Blinkit": "https://www.blinkit.com",
+  "Zepto": "https://www.zepto.com",
+  "BigBasket": "https://www.bigbasket.com",
+  "Amazon Fresh": "https://www.amazon.in/alm/storefront",
+  "Swiggy Instamart": "https://www.swiggy.com/instamart",
+  "Flipkart Supermart": "https://www.flipkart.com/supermart",
+  "Nature's Basket": "https://www.naturesbasket.co.in",
+  "JioMart": "https://www.jiomart.com",
+};
+
+function buildLiveSearchUrl(storeName: string, items: Record<string, number>) {
+  const itemQuery = Object.keys(items).join(" ").trim();
+  const searchQuery = encodeURIComponent(itemQuery || storeName);
+
+  switch (storeName) {
+    case "Blinkit":
+      return `https://blinkit.com/s/?q=${searchQuery}`;
+    case "Zepto":
+      return `https://www.zepto.com/search?query=${searchQuery}`;
+    case "BigBasket":
+      return `https://www.bigbasket.com/ps/?q=${searchQuery}`;
+    case "Amazon Fresh":
+      return `https://www.amazon.in/s?k=${searchQuery}&i=amazonfresh`;
+    case "Swiggy Instamart":
+      return `https://www.swiggy.com/instamart/search?query=${searchQuery}`;
+    case "Flipkart Supermart":
+      return `https://www.flipkart.com/search?q=${searchQuery}&marketplace=supermarket`;
+    case "Nature's Basket":
+      return `https://www.naturesbasket.co.in/search?q=${searchQuery}`;
+    case "JioMart":
+      return `https://www.jiomart.com/search/${searchQuery}/1`;
+    default:
+      return `https://www.google.com/search?q=${encodeURIComponent(`${storeName} ${itemQuery}`.trim())}`;
+  }
+}
+
+function getViewLabel(storeName: string) {
+  return `View on ${storeName}`;
+}
+
 function StarRating({ rating }: { rating: number }) {
   return (
     <div className="flex items-center gap-1">
@@ -47,6 +88,7 @@ function StarRating({ rating }: { rating: number }) {
 export default function StoreCard({ store, isBest, index }: StoreCardProps) {
   const emoji = STORE_LOGOS[store.name] || "🏪";
   const delayClass = index !== undefined ? `fade-in-up-delay-${Math.min(index % 3 + 1, 3)}` : "";
+  const liveSearchUrl = buildLiveSearchUrl(store.name, store.items);
 
   if (isBest) {
     return (
@@ -74,6 +116,14 @@ export default function StoreCard({ store, isBest, index }: StoreCardProps) {
           <div className="bg-primary/10 rounded-xl p-4 text-center">
             <p className="text-xs text-muted-foreground mb-1">Final Price</p>
             <p className="font-display text-2xl font-bold text-primary">₹{store.final_price}</p>
+            <a
+              href={liveSearchUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="mt-2 inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              {getViewLabel(store.name)}
+            </a>
           </div>
           <div className="bg-accent/15 rounded-xl p-4 text-center">
             <p className="text-xs text-muted-foreground mb-1">You Save</p>
@@ -172,7 +222,17 @@ export default function StoreCard({ store, isBest, index }: StoreCardProps) {
           <p className="text-xs text-muted-foreground">Subtotal: ₹{store.subtotal}</p>
           <p className="text-xs text-muted-foreground">After discount</p>
         </div>
-        <p className="font-display text-xl font-bold text-primary">₹{store.final_price}</p>
+        <div className="flex items-center gap-3">
+          <p className="font-display text-xl font-bold text-primary">₹{store.final_price}</p>
+          <a
+            href={liveSearchUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
+          >
+            {getViewLabel(store.name)}
+          </a>
+        </div>
       </div>
     </div>
   );

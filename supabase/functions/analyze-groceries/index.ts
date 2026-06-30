@@ -122,10 +122,14 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const envKeys = ["GEMINI_API_KEY", "LOVABLE_API_KEY", "VITE_GEMINI_API_KEY"];
+    const found: Record<string, boolean> = {};
+    for (const k of envKeys) found[k] = !!Deno.env.get(k);
+    console.log("analyze-groceries invoked", { items, apiKeyPresence: found });
+    const API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("LOVABLE_API_KEY") ?? Deno.env.get("VITE_GEMINI_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      console.log("No LOVABLE_API_KEY found, using fallback data");
+    if (!API_KEY) {
+      console.log("No API key found, using fallback data");
       return new Response(JSON.stringify(FALLBACK_DATA), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -137,7 +141,7 @@ Stores to compare: Blinkit, Zepto, BigBasket, Amazon Fresh, Swiggy Instamart, Fl
 
 Items requested: ${items}
 
-For each store provide realistic Indian market prices (in INR ₹) for each item, subtotal, discount percentage (between 8-25%), final price after discount, typical delivery time, delivery cost (some stores offer free delivery above a threshold), free delivery threshold amount, and Google rating (4.0-4.6 range).
+For each store provide realistic Indian market prices (in INR) for each item, subtotal, discount percentage (between 8-25%), final price after discount, typical delivery time, delivery cost (some stores offer free delivery above a threshold), free delivery threshold amount, and Google rating (4.0-4.6 range).
 
 Mark the store with the lowest final_price as "best": true.
 
@@ -159,65 +163,45 @@ Return ONLY valid JSON in this exact format (no markdown, no extra text):
   ]
 }
 
-Make prices realistic for 2024 India market. Only one store should have "best": true (the cheapest final_price).`;
+Make prices realistic for 2026 India market. Only one store should have "best": true (the cheapest final_price).`;
 
     let responseData;
 
     try {
-      const aiResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
-            messages: [
-              {
-                role: "user",
-                content: prompt,
-              },
-            ],
-            temperature: 0.3,
-          }),
-        }
-      );
+      const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+      console.log("Calling Gemini API directly");
+
+      const aiResponse = await fetch(GEMINI_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3 },
+        }),
+      });
 
       if (!aiResponse.ok) {
-        if (aiResponse.status === 429) {
-          console.log("Rate limited, using fallback");
-          return new Response(JSON.stringify({ ...FALLBACK_DATA, fallback: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (aiResponse.status === 402) {
-          console.log("Payment required, using fallback");
-          return new Response(JSON.stringify({ ...FALLBACK_DATA, fallback: true }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        throw new Error(`AI gateway error: ${aiResponse.status}`);
+        const bodyText = await aiResponse.text().catch(() => "<no body>");
+        console.error("Gemini API non-OK response", { status: aiResponse.status, body: bodyText });
+        return new Response(JSON.stringify({ ...FALLBACK_DATA, fallback: true, error: { status: aiResponse.status, body: bodyText } }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const aiData = await aiResponse.json();
-      const content = aiData.choices?.[0]?.message?.content;
+      const content = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!content) throw new Error("No content from AI");
 
-      // Clean up the response - remove markdown code blocks if present
       const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       responseData = JSON.parse(cleaned);
 
-      // Ensure exactly one store is marked as best (lowest final_price)
       if (responseData.stores && Array.isArray(responseData.stores)) {
         const lowestPrice = Math.min(...responseData.stores.map((s: any) => s.final_price));
         responseData.stores = responseData.stores.map((s: any) => ({
           ...s,
           best: s.final_price === lowestPrice,
         }));
-        // If there are ties, mark only the first one as best
         let bestFound = false;
         responseData.stores = responseData.stores.map((s: any) => {
           if (s.best && !bestFound) { bestFound = true; return s; }
